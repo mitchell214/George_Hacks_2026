@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Raspberry Pi Sensor Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: rgba(17, 24, 39, 0.86);
+      --panel-2: rgba(15, 23, 42, 0.92);
+      --text: #e5eefc;
+      --muted: #8ea2c7;
+      --line: rgba(148, 163, 184, 0.18);
+      --accent: #5eead4;
+      --accent-2: #60a5fa;
+      --danger: #fb7185;
+      --warn: #fbbf24;
+      --ok: #4ade80;
+      --shadow: 0 20px 60px rgba(0,0,0,.35);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(96,165,250,.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(94,234,212,.14), transparent 25%),
+        linear-gradient(180deg, #07101d 0%, #0b1220 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .title-wrap h1 {
+      margin: 0;
+      font-size: clamp(28px, 3vw, 44px);
+      letter-spacing: -0.04em;
+    }
+
+    .title-wrap p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      max-width: 760px;
+      line-height: 1.5;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 5px rgba(251,191,36,.14); }
+    .dot.ok { background: var(--ok); box-shadow: 0 0 0 5px rgba(74,222,128,.14); }
+    .dot.bad { background: var(--danger); box-shadow: 0 0 0 5px rgba(251,113,133,.14); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      overflow: hidden;
+    }
+
+    .panel .hd {
+      padding: 18px 18px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .panel .hd h2, .panel .hd h3 { margin: 0; }
+    .panel .hd small { color: var(--muted); }
+
+    .panel .bd { padding: 18px; }
+
+    .field { display: grid; gap: 8px; margin-bottom: 14px; }
+    label { font-size: 13px; color: var(--muted); }
+    input, select, textarea {
+      width: 100%;
+      background: rgba(255,255,255,.05);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      outline: none;
+      transition: 0.2s ease;
+    }
+    input:focus, select:focus, textarea:focus { border-color: rgba(96,165,250,.7); box-shadow: 0 0 0 4px rgba(96,165,250,.14); }
+    textarea { min-height: 90px; resize: vertical; }
+
+    .row { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .row-3 { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .btnbar { display: flex; flex-wrap: wrap; gap: 10px; }
+    button {
+      border: 0;
+      color: #06101b;
+      background: linear-gradient(135deg, var(--accent), #a7f3d0);
+      border-radius: 14px;
+      padding: 11px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .15s ease, opacity .2s ease, filter .2s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    button.secondary {
+      color: var(--text);
+      background: rgba(255,255,255,.06);
+      border: 1px solid var(--line);
+      font-weight: 600;
+    }
+    button.danger { background: linear-gradient(135deg, #fb7185, #fda4af); }
+    button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+    .stack { display: grid; gap: 12px; }
+
+    .sensor-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 8px;
+    }
+
+    .card {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      min-height: 120px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .card .k { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+    .card .v { font-size: clamp(22px, 2vw, 34px); font-weight: 800; margin-top: 6px; letter-spacing: -0.04em; }
+    .card .s { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    .badge { display: inline-flex; align-items: center; width: fit-content; gap: 8px; padding: 6px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); background: rgba(255,255,255,.04); }
+
+    .dashboard-grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: 1.2fr .8fr;
+      margin-top: 18px;
+    }
+
+    .chart-wrap { position: relative; height: 320px; }
+    canvas { max-width: 100%; }
+
+    .table-wrap { overflow: auto; max-height: 500px; border-top: 1px solid var(--line); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid rgba(148,163,184,.12);
+      white-space: nowrap;
+      font-size: 14px;
+    }
+    th { color: var(--muted); position: sticky; top: 0; background: rgba(11,18,32,.96); z-index: 1; }
+    tr:hover td { background: rgba(255,255,255,.03); }
+
+    .log {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #c8d4ea;
+      background: rgba(2,6,23,.55);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      max-height: 240px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+
+    .muted { color: var(--muted); }
+    .mini { font-size: 12px; }
+    .right { text-align: right; }
+
+    .footer-note {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1180px) {
+      .grid, .dashboard-grid { grid-template-columns: 1fr; }
+      .sensor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 700px) {
+      .sensor-grid, .row, .row-3 { grid-template-columns: 1fr; }
+      .app { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title-wrap">
+        <h1>Raspberry Pi Sensor Dashboard</h1>
+        <p>Connect this page to a Raspberry Pi API, pull live sensor values, graph the readings, and save every datapoint locally with delete and export tools.</p>
+      </div>
+      <div class="status-pill"><span id="statusDot" class="dot"></span><span id="statusText">Disconnected</span></div>
+    </div>
+
+    <div class="grid">
+      <section class="panel">
+        <div class="hd">
+          <h2>Connection</h2>
+          <small>Configure the Raspberry Pi endpoint</small>
+        </div>
+        <div class="bd stack">
+          <div class="field">
+            <label for="apiBase">API Base URL</label>
+            <input id="apiBase" type="text" value="http://raspberrypi.local:5000" placeholder="http://192.168.1.50:5000" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="sensorPath">Sensor endpoint</label>
+              <input id="sensorPath" type="text" value="/api/sensors" />
+            </div>
+            <div class="field">
+              <label for="refreshPath">Refresh endpoint</label>
+              <input id="refreshPath" type="text" value="/api/refresh" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="pollMs">Auto refresh interval (ms)</label>
+              <input id="pollMs" type="number" min="1000" step="500" value="5000" />
+            </div>
+            <div class="field">
+              <label for="historyLimit">Stored records limit</label>
+              <input id="historyLimit" type="number" min="50" step="50" value="5000" />
+            </div>
+          </div>
+          <div class="btnbar">
+            <button id="connectBtn">Connect / Query</button>
+            <button id="refreshBtn" class="secondary">Query now</button>
+            <button id="togglePollBtn" class="secondary">Start auto refresh</button>
+          </div>
+          <div class="btnbar">
+            <button id="exportBtn" class="secondary">Export data</button>
+            <button id="importBtn" class="secondary">Import data</button>
+            <button id="deleteAllBtn" class="danger">Delete all stored data</button>
+          </div>
+          <div class="field">
+            <label for="importBox">Import JSON bundle</label>
+            <textarea id="importBox" placeholder='Paste exported JSON here, then click Import data'></textarea>
+          </div>
+          <div class="footer-note">
+            This page expects the Pi to return JSON. It supports a flexible format and will try to understand nested sensor objects, arrays, or flat key/value readings.
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="hd">
+          <h2>Live sensor cards</h2>
+          <small>Latest values from the Pi</small>
+        </div>
+        <div class="bd">
+          <div class="sensor-grid" id="sensorCards"></div>
+          <div class="footer-note" id="lastFetchNote">No data yet. Press Query now.</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="dashboard-grid">
+      <section class="panel">
+        <div class="hd">
+          <h3>Graphs</h3>
+          <small>History over time</small>
+        </div>
+        <div class="bd">
+          <div class="row-3">
+            <div class="field">
+              <label for="graphMetric">Graph metric</label>
+              <select id="graphMetric"></select>
+            </div>
+            <div class="field">
+              <label for="tableFilter">Filter table</label>
+              <input id="tableFilter" type="text" placeholder="Search sensor name, value, or timestamp" />
+            </div>
+            <div class="field">
+              <label for="timeWindow">Time window</label>
+              <select id="timeWindow">
+                <option value="50">Last 50 points</option>
+                <option value="100" selected>Last 100 points</option>
+                <option value="250">Last 250 points</option>
+                <option value="all">All points</option>
+              </select>
+            </div>
+          </div>
+          <div class="chart-wrap"><canvas id="historyChart"></canvas></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="hd">
+          <h3>Device log</h3>
+          <small>All actions and fetches</small>
+        </div>
+        <div class="bd">
+          <div class="log" id="logBox"></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-top:18px;">
+      <div class="hd">
+        <h2>Stored readings</h2>
+        <small>Everything saved locally in the browser</small>
+      </div>
+      <div class="bd">
+        <div class="row-3">
+          <div class="badge">Records: <strong id="recordCount">0</strong></div>
+          <div class="badge">Sensors tracked: <strong id="metricCount">0</strong></div>
+          <div class="badge">Storage: <strong id="storageSize">0 KB</strong></div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Sensor</th>
+              <th>Value</th>
+              <th>Unit</th>
+              <th>Source</th>
+              <th class="right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="dataTable"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const els = {
+      apiBase: document.getElementById('apiBase'),
+      sensorPath: document.getElementById('sensorPath'),
+      refreshPath: document.getElementById('refreshPath'),
+      pollMs: document.getElementById('pollMs'),
+      historyLimit: document.getElementById('historyLimit'),
+      connectBtn: document.getElementById('connectBtn'),
+      refreshBtn: document.getElementById('refreshBtn'),
+      togglePollBtn: document.getElementById('togglePollBtn'),
+      exportBtn: document.getElementById('exportBtn'),
+      importBtn: document.getElementById('importBtn'),
+      deleteAllBtn: document.getElementById('deleteAllBtn'),
+      importBox: document.getElementById('importBox'),
+      sensorCards: document.getElementById('sensorCards'),
+      lastFetchNote: document.getElementById('lastFetchNote'),
+      graphMetric: document.getElementById('graphMetric'),
+      tableFilter: document.getElementById('tableFilter'),
+      timeWindow: document.getElementById('timeWindow'),
+      logBox: document.getElementById('logBox'),
+      dataTable: document.getElementById('dataTable'),
+      recordCount: document.getElementById('recordCount'),
+      metricCount: document.getElementById('metricCount'),
+      storageSize: document.getElementById('storageSize'),
+      statusDot: document.getElementById('statusDot'),
+      statusText: document.getElementById('statusText')
+    };
+
+    const STORAGE_KEY = 'rpi_sensor_dashboard_v1';
+    let state = {
+      records: [],
+      pollTimer: null,
+      currentMetric: '',
+      selectedMetrics: new Set(),
+      connected: false,
+      logs: []
+    };
+
+    const chart = new Chart(document.getElementById('historyChart'), {
+      type: 'line',
+      data: { labels: [], datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#d7e3f7' } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}` } }
+        },
+        scales: {
+          x: { ticks: { color: '#a8b5cc' }, grid: { color: 'rgba(148,163,184,.1)' } },
+          y: { ticks: { color: '#a8b5cc' }, grid: { color: 'rgba(148,163,184,.1)' } }
+        }
+      }
+    });
+
+    function nowIso() {
+      return new Date().toISOString();
+    }
+
+    function log(message) {
+      const line = `[${new Date().toLocaleString()}] ${message}`;
+      state.logs.unshift(line);
+      state.logs = state.logs.slice(0, 200);
+      els.logBox.textContent = state.logs.join('\n');
+    }
+
+    function save() {
+      const payload = {
+        records: state.records,
+        logs: state.logs,
+        settings: {
+          apiBase: els.apiBase.value,
+          sensorPath: els.sensorPath.value,
+          refreshPath: els.refreshPath.value,
+          pollMs: els.pollMs.value,
+          historyLimit: els.historyLimit.value
+        }
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      updateStats();
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const payload = JSON.parse(raw);
+        state.records = Array.isArray(payload.records) ? payload.records : [];
+        state.logs = Array.isArray(payload.logs) ? payload.logs : [];
+        if (payload.settings) {
+          els.apiBase.value = payload.settings.apiBase ?? els.apiBase.value;
+          els.sensorPath.value = payload.settings.sensorPath ?? els.sensorPath.value;
+          els.refreshPath.value = payload.settings.refreshPath ?? els.refreshPath.value;
+          els.pollMs.value = payload.settings.pollMs ?? els.pollMs.value;
+          els.historyLimit.value = payload.settings.historyLimit ?? els.historyLimit.value;
+        }
+        els.logBox.textContent = state.logs.join('\n');
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    function flattenSensors(payload, source = 'api') {
+      const results = [];
+      const ts = payload.timestamp || payload.time || payload.updated_at || nowIso();
+
+      const add = (name, value, unit = '', extra = {}) => {
+        if (value === undefined || value === null || Number.isNaN(value)) return;
+        results.push({
+          id: crypto.randomUUID(),
+          timestamp: ts,
+          sensor: String(name),
+          value,
+          unit: unit || extra.unit || '',
+          source,
+          raw: extra.raw ?? null
+        });
+      };
+
+      const walk = (obj, prefix = '') => {
+        if (obj === null || obj === undefined) return;
+        if (typeof obj === 'number' || typeof obj === 'string' || typeof obj === 'boolean') {
+          add(prefix || 'value', obj, '', { raw: obj });
+          return;
+        }
+        if (Array.isArray(obj)) {
+          obj.forEach((item, i) => walk(item, `${prefix}${prefix ? '.' : ''}${i}`));
+          return;
+        }
+        if (typeof obj === 'object') {
+          const specialKeys = ['value', 'reading', 'temp', 'temperature', 'humidity', 'pressure', 'light', 'moisture', 'voltage', 'current', 'distance', 'rpm'];
+          const hasSensorLike = Object.keys(obj).some(k => specialKeys.includes(k.toLowerCase()));
+          if (hasSensorLike && (obj.name || obj.sensor || obj.type || obj.label)) {
+            const name = obj.name || obj.sensor || obj.type || obj.label;
+            const value = obj.value ?? obj.reading ?? obj.temp ?? obj.temperature ?? obj.humidity ?? obj.pressure ?? obj.light ?? obj.moisture ?? obj.voltage ?? obj.current ?? obj.distance ?? obj.rpm;
+            add(name, value, obj.unit || '', { raw: obj });
+            return;
+          }
+          for (const [k, v] of Object.entries(obj)) {
+            if (['timestamp', 'time', 'updated_at', 'device', 'status'].includes(k.toLowerCase())) continue;
+            if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') {
+              add(prefix ? `${prefix}.${k}` : k, v, obj.unit || '', { raw: obj });
+            } else {
+              walk(v, prefix ? `${prefix}.${k}` : k);
+            }
+          }
+        }
+      };
+
+      // Common API shapes.
+      if (payload && typeof payload === 'object') {
+        if (Array.isArray(payload.sensors)) {
+          payload.sensors.forEach(s => {
+            const name = s.name || s.sensor || s.type || s.label || 'sensor';
+            const value = s.value ?? s.reading ?? s.val;
+            add(name, value, s.unit || '', { raw: s });
+          });
+        } else if (payload.sensor) {
+          walk(payload.sensor);
+        } else if (payload.data) {
+          walk(payload.data);
+        } else {
+          walk(payload);
+        }
+      }
+
+      return results;
+    }
+
+    function dedupeAndStore(items) {
+      const unique = [];
+      const seen = new Set();
+      for (const item of items) {
+        const key = `${item.timestamp}|${item.sensor}|${item.value}|${item.unit}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        unique.push(item);
+      }
+      state.records.push(...unique);
+      const limit = Math.max(50, Number(els.historyLimit.value) || 5000);
+      if (state.records.length > limit) {
+        state.records = state.records.slice(state.records.length - limit);
+      }
+      if (unique.length) {
+        state.connected = true;
+        setStatus('ok', `Connected · ${unique.length} new reading${unique.length === 1 ? '' : 's'}`);
+        log(`Saved ${unique.length} new reading${unique.length === 1 ? '' : 's'}.`);
+      }
+      save();
+      renderAll();
+    }
+
+    async function queryPi(triggerRefresh = false) {
+      const base = els.apiBase.value.trim().replace(/\/$/, '');
+      const sensorUrl = `${base}${els.sensorPath.value.startsWith('/') ? '' : '/'}${els.sensorPath.value.trim()}`;
+      const refreshUrl = `${base}${els.refreshPath.value.startsWith('/') ? '' : '/'}${els.refreshPath.value.trim()}`;
+
+      try {
+        setStatus('warn', 'Querying Raspberry Pi...');
+        log(`Requesting sensor data from ${sensorUrl}`);
+
+        if (triggerRefresh) {
+          try {
+            await fetch(refreshUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request: 'refresh' }) });
+            log(`Sent refresh request to ${refreshUrl}`);
+          } catch (e) {
+            log(`Refresh endpoint not reachable: ${e.message}`);
+          }
+        }
+
+        const response = await fetch(sensorUrl, { headers: { 'Accept': 'application/json' } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const json = await response.json();
+        const items = flattenSensors(json);
+        if (!items.length) {
+          log('No sensor readings found in the response body.');
+          setStatus('bad', 'No sensor values found');
+          return;
+        }
+        els.lastFetchNote.textContent = `Last successful query: ${new Date().toLocaleString()} · ${items.length} readings extracted`;
+        dedupeAndStore(items);
+      } catch (error) {
+        setStatus('bad', 'Disconnected / fetch failed');
+        log(`Fetch error: ${error.message}`);
+      }
+    }
+
+    function setStatus(kind, text) {
+      els.statusDot.className = `dot ${kind === 'ok' ? 'ok' : kind === 'bad' ? 'bad' : ''}`;
+      els.statusText.textContent = text;
+    }
+
+    function formatValue(rec) {
+      if (typeof rec.value === 'number') {
+        return Number.isInteger(rec.value) ? String(rec.value) : rec.value.toFixed(3).replace(/\.0+$/, '');
+      }
+      return String(rec.value);
+    }
+
+    function currentMetricNames() {
+      const names = [...new Set(state.records.map(r => r.sensor))].sort((a, b) => a.localeCompare(b));
+      return names;
+    }
+
+    function updateMetricSelector() {
+      const names = currentMetricNames();
+      const old = els.graphMetric.value;
+      els.graphMetric.innerHTML = '';
+      if (!names.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No metrics yet';
+        els.graphMetric.appendChild(opt);
+        state.currentMetric = '';
+        return;
+      }
+      names.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        els.graphMetric.appendChild(opt);
+      });
+      els.graphMetric.value = names.includes(old) ? old : names[0];
+      state.currentMetric = els.graphMetric.value;
+    }
+
+    function renderCards() {
+      const latestBySensor = new Map();
+      for (const rec of state.records) latestBySensor.set(rec.sensor, rec);
+      const rows = [...latestBySensor.values()].sort((a,b) => a.sensor.localeCompare(b.sensor));
+      els.sensorCards.innerHTML = rows.map(rec => `
+        <div class="card">
+          <div>
+            <div class="k">${escapeHtml(rec.sensor)}</div>
+            <div class="v">${escapeHtml(formatValue(rec))}${rec.unit ? ` <span class="mini">${escapeHtml(rec.unit)}</span>` : ''}</div>
+            <div class="s">Updated ${new Date(rec.timestamp).toLocaleString()}</div>
+          </div>
+          <div class="badge">Source: ${escapeHtml(rec.source || 'api')}</div>
+        </div>
+      `).join('') || '<div class="muted">No sensor data stored yet.</div>';
+    }
+
+    function getWindowedRecords() {
+      const selected = els.timeWindow.value;
+      if (selected === 'all') return state.records.slice();
+      const n = Number(selected) || 100;
+      return state.records.slice(-n);
+    }
+
+    function renderChart() {
+      const metric = els.graphMetric.value;
+      const points = getWindowedRecords().filter(r => r.sensor === metric && typeof r.value === 'number');
+      const labels = points.map(r => new Date(r.timestamp).toLocaleTimeString());
+      chart.data.labels = labels;
+      chart.data.datasets = metric ? [{
+        label: metric,
+        data: points.map(r => r.value),
+        borderWidth: 2,
+        tension: 0.25,
+        pointRadius: 2,
+        fill: true
+      }] : [];
+      chart.update();
+    }
+
+    function renderTable() {
+      const filter = els.tableFilter.value.trim().toLowerCase();
+      const rows = [...state.records].reverse().filter(r => {
+        if (!filter) return true;
+        return [r.timestamp, r.sensor, r.value, r.unit, r.source].some(v => String(v).toLowerCase().includes(filter));
+      }).slice(0, 500);
+
+      els.dataTable.innerHTML = rows.map(rec => `
+        <tr>
+          <td>${escapeHtml(new Date(rec.timestamp).toLocaleString())}</td>
+          <td>${escapeHtml(rec.sensor)}</td>
+          <td>${escapeHtml(formatValue(rec))}</td>
+          <td>${escapeHtml(rec.unit || '')}</td>
+          <td>${escapeHtml(rec.source || '')}</td>
+          <td class="right"><button class="secondary" data-del="${escapeHtml(rec.id)}">Delete</button></td>
+        </tr>
+      `).join('') || '<tr><td colspan="6" class="muted">No stored readings match the current filter.</td></tr>';
+
+      els.dataTable.querySelectorAll('button[data-del]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-del');
+          state.records = state.records.filter(r => r.id !== id);
+          log(`Deleted one reading (${id.slice(0, 8)}...).`);
+          save();
+          renderAll();
+        });
+      });
+    }
+
+    function updateStats() {
+      const metricNames = currentMetricNames();
+      els.recordCount.textContent = state.records.length.toLocaleString();
+      els.metricCount.textContent = metricNames.length.toLocaleString();
+      const size = new Blob([JSON.stringify({ records: state.records, logs: state.logs })]).size;
+      els.storageSize.textContent = `${Math.max(1, Math.round(size / 1024))} KB`;
+    }
+
+    function renderAll() {
+      updateMetricSelector();
+      renderCards();
+      renderChart();
+      renderTable();
+      updateStats();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function exportData() {
+      const blob = new Blob([JSON.stringify({
+        exportedAt: nowIso(),
+        records: state.records,
+        logs: state.logs,
+        settings: {
+          apiBase: els.apiBase.value,
+          sensorPath: els.sensorPath.value,
+          refreshPath: els.refreshPath.value,
+          pollMs: els.pollMs.value,
+          historyLimit: els.historyLimit.value
+        }
+      }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rpi-sensor-data-${new Date().toISOString().replaceAll(':','-')}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      log('Exported sensor data.');
+    }
+
+    function importData() {
+      try {
+        const parsed = JSON.parse(els.importBox.value);
+        const recs = Array.isArray(parsed.records) ? parsed.records : [];
+        const cleaned = recs
+          .filter(r => r && r.timestamp && r.sensor !== undefined)
+          .map(r => ({
+            id: r.id || crypto.randomUUID(),
+            timestamp: r.timestamp,
+            sensor: String(r.sensor),
+            value: r.value,
+            unit: r.unit || '',
+            source: r.source || 'import',
+            raw: r.raw ?? null
+          }));
+        state.records.push(...cleaned);
+        state.logs.unshift(`[${new Date().toLocaleString()}] Imported ${cleaned.length} readings.`);
+        state.logs = state.logs.slice(0, 200);
+        els.importBox.value = '';
+        save();
+        renderAll();
+        log(`Imported ${cleaned.length} readings.`);
+      } catch (e) {
+        alert('Invalid JSON. Paste a previously exported bundle into the import box.');
+      }
+    }
+
+    function deleteAll() {
+      if (!confirm('Delete every stored reading and log from this browser?')) return;
+      state.records = [];
+      state.logs = [];
+      localStorage.removeItem(STORAGE_KEY);
+      els.logBox.textContent = '';
+      setStatus('', 'Disconnected');
+      renderAll();
+    }
+
+    function startPolling() {
+      stopPolling();
+      const ms = Math.max(1000, Number(els.pollMs.value) || 5000);
+      state.pollTimer = setInterval(() => queryPi(false), ms);
+      els.togglePollBtn.textContent = 'Stop auto refresh';
+      log(`Auto refresh started (${ms} ms).`);
+    }
+
+    function stopPolling() {
+      if (state.pollTimer) clearInterval(state.pollTimer);
+      state.pollTimer = null;
+      els.togglePollBtn.textContent = 'Start auto refresh';
+      log('Auto refresh stopped.');
+    }
+
+    els.connectBtn.addEventListener('click', () => queryPi(true));
+    els.refreshBtn.addEventListener('click', () => queryPi(true));
+    els.togglePollBtn.addEventListener('click', () => state.pollTimer ? stopPolling() : startPolling());
+    els.exportBtn.addEventListener('click', exportData);
+    els.importBtn.addEventListener('click', importData);
+    els.deleteAllBtn.addEventListener('click', deleteAll);
+    els.graphMetric.addEventListener('change', () => { state.currentMetric = els.graphMetric.value; renderChart(); });
+    els.tableFilter.addEventListener('input', renderTable);
+    els.timeWindow.addEventListener('change', renderChart);
+    [els.apiBase, els.sensorPath, els.refreshPath, els.pollMs, els.historyLimit].forEach(el => el.addEventListener('change', save));
+
+    load();
+    renderAll();
+    setStatus('', 'Ready');
+    log('Dashboard loaded. Configure the API and query the Pi.');
+
+    if (state.records.length) {
+      setStatus('ok', `Loaded ${state.records.length} stored reading${state.records.length === 1 ? '' : 's'}`);
+    }
+  </script>
+</body>
+</html>
