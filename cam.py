@@ -1,8 +1,9 @@
-from flask import Flask, Response
+from flask import Flask, Response, request, jsonify
 from picamera2 import Picamera2
 import threading
 import time
 from flask_cors import CORS
+import cv2
 
 app = Flask(__name__)
 CORS(app)
@@ -19,7 +20,7 @@ picam2.start()
 time.sleep(1)
 
 latest_frame = None
-lock = threading.Lock()
+latest_lock = threading.Lock()
 
 def capture_loop():
     global latest_frame
@@ -27,35 +28,37 @@ def capture_loop():
     while True:
         frame = picam2.capture_array()
 
-        import cv2
-
-        # Rotate 90 degrees to the left (counterclockwise)
+        # rotate 90° left
         frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
         success, jpeg = cv2.imencode(".jpg", frame)
 
         if success:
-            with lock:
-                latest_frame = jpeg.tobytes()
+            new_frame = jpeg.tobytes()
+
+            # fast atomic swap
+            with latest_lock:
+                latest_frame = new_frame
 
         time.sleep(0.1)
 
-
 threading.Thread(target=capture_loop, daemon=True).start()
 
-@app.route("/latest.jpg")
+@app.route("/latest.jpg", methods=["GET"])
 def latest():
-    with lock:
-        if latest_frame is None:
-            return "No frame yet", 503
+    with latest_lock:
+        frame = latest_frame
 
-        return Response(latest_frame, mimetype="image/jpeg")
+    if frame is None:
+        return "No frame yet", 503
 
-@app.route("/stream.mjpg")
+    return Response(frame, mimetype="image/jpeg")
+
+@app.route("/stream.mjpg", methods=["GET"])
 def stream():
     def generate():
         while True:
-            with lock:
+            with latest_lock:
                 frame = latest_frame
 
             if frame:
@@ -66,12 +69,67 @@ def stream():
                     b"\r\n"
                 )
 
-            time.sleep(0.1)
+            time.sleep(0.05)
 
     return Response(
         generate(),
         mimetype="multipart/x-mixed-replace; boundary=frame"
     )
+
+@app.route("/control", methods=["POST"])
+def control():
+    data = request.get_json(silent=True) or {}
+    cmd = data.get("command")
+
+    if cmd == "restart_camera":
+        picam2.stop()
+        picam2.start()
+        return jsonify({"status": "camera restarted"})
+
+    if cmd == "status":
+        return jsonify({"status": "running"})
+
+    return jsonify({"error": "unknown command"}), 400
+
+@app.route("/api/<path:endpoint>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+def api_gateway(endpoint):
+
+    data = request.get_json(silent=True)
+
+    if endpoint == "frame" and request.method == "GET":
+        with latest_lock:
+            if latest_frame is None:
+                return jsonify({"error": "no frame"}), 503
+
+            import base64
+            b64 = base64.b64encode(latest_frame).decode("utf-8")
+
+        return jsonify({"image_base64": b64})
+
+    if endpoint == "message" and request.method == "POST":
+        prompt = (data or {}).get("prompt", "")
+
+        return jsonify({
+            "received": prompt,
+            "status": "ok"
+        })
+
+    if endpoint == "camera" and request.method == "POST":
+        cmd = (data or {}).get("command")
+
+        if cmd == "restart":
+            picam2.stop()
+            picam2.start()
+            return jsonify({"status": "restarted"})
+
+        return jsonify({"error": "unknown command"}), 400
+
+    return jsonify({
+        "endpoint": endpoint,
+        "method": request.method,
+        "data": data,
+        "status": "unhandled route"
+    })
 
 @app.route("/")
 def index():
@@ -86,10 +144,7 @@ def index():
     </head>
     <body>
         <h1>Live Camera Feed</h1>
-
-        <!-- Recommended: MJPEG stream -->
         <img src="/stream.mjpg">
-
     </body>
     </html>
     """
