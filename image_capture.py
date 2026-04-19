@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import base64
 
-SERVER_URL = "http://11.35.149.194:5050/latest.jpg"
+SERVER_URL = "https://unripe-footing-situation.ngrok-free.dev/latest.jpg"
 SAVE_DIR = "camera_images"
 
 os.makedirs(SAVE_DIR, exist_ok=True)
