@@ -2,8 +2,10 @@ from flask import Flask, Response
 from picamera2 import Picamera2
 import threading
 import time
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 picam2 = Picamera2()
 
