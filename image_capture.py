@@ -46,7 +46,7 @@ def save_image(frame):
         return None
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    filename = os.path.join(SAVE_DIR, f"frame_{timestamp}.jpg")
+    filename = os.path.join(SAVE_DIR, f"frame.jpg")
 
     cv2.imwrite(filename, frame)
 
