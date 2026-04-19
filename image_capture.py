@@ -4,7 +4,7 @@ from datetime import datetime
 import cv2
 import numpy as np
 
-SERVER_URL = "http://11.35.149.194:5050/latest.jpg"
+SERVER_URL = "https://exceeding-choosy-bogus.ngrok-free.dev/latest.jpg"
 SAVE_DIR = "camera_images"
 
 os.makedirs(SAVE_DIR, exist_ok=True)
