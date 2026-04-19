@@ -26,6 +26,10 @@ def capture_loop():
         frame = picam2.capture_array()
 
         import cv2
+
+        # Rotate 90 degrees to the left (counterclockwise)
+        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
         success, jpeg = cv2.imencode(".jpg", frame)
 
         if success:
